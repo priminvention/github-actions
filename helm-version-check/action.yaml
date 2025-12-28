@@ -1,0 +1,89 @@
+# Helm Version Check - Composite Action
+# Checks for Helm chart updates and optionally creates PRs
+#
+# Usage:
+#   - uses: priminvention/github-actions/helm-version-check@main
+#     with:
+#       versions-file: 'versions.yaml'
+#       create-pr: 'true'
+
+name: 'Helm Version Check'
+description: 'Check for Helm chart version updates and create PRs'
+author: 'priminvention'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  versions-file:
+    description: 'Path to the versions.yaml file containing Helm chart versions'
+    required: false
+    default: 'versions.yaml'
+  create-pr:
+    description: 'Whether to create PRs for updates (true/false)'
+    required: false
+    default: 'false'
+  update-type:
+    description: 'Types of updates to include: all, major, minor, patch'
+    required: false
+    default: 'all'
+  github-token:
+    description: 'GitHub token for creating PRs'
+    required: false
+    default: ${{ github.token }}
+  pr-labels:
+    description: 'Comma-separated labels to add to PRs'
+    required: false
+    default: 'dependencies,helm'
+  dry-run:
+    description: 'Only check versions without making changes'
+    required: false
+    default: 'false'
+
+outputs:
+  updates-available:
+    description: 'Whether updates are available (true/false)'
+    value: ${{ steps.check.outputs.updates-available }}
+  updates-json:
+    description: 'JSON array of available updates'
+    value: ${{ steps.check.outputs.updates-json }}
+  updates-summary:
+    description: 'Human-readable summary of updates'
+    value: ${{ steps.check.outputs.updates-summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: 'latest'
+
+    - name: Install yq
+      shell: bash
+      run: |
+        if ! command -v yq &> /dev/null; then
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+        fi
+
+    - name: Check Helm Chart Versions
+      id: check
+      shell: bash
+      env:
+        VERSIONS_FILE: ${{ inputs.versions-file }}
+        UPDATE_TYPE: ${{ inputs.update-type }}
+      run: |
+        ${{ github.action_path }}/scripts/check-versions.sh
+
+    - name: Create Update PRs
+      if: inputs.create-pr == 'true' && steps.check.outputs.updates-available == 'true' && inputs.dry-run != 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        VERSIONS_FILE: ${{ inputs.versions-file }}
+        UPDATES_JSON: ${{ steps.check.outputs.updates-json }}
+        PR_LABELS: ${{ inputs.pr-labels }}
+      run: |
+        ${{ github.action_path }}/scripts/create-prs.sh
