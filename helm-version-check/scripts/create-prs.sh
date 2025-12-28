@@ -39,8 +39,8 @@ echo "$UPDATES_JSON" | jq -c '.[]' | while read -r update; do
   fi
 
   # Check if PR already exists (open or closed) to avoid duplicate PRs
-  EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state all --json number,state --jq '.[0] | "\(.number) (\(.state))"' 2>/dev/null || echo "")
-  if [[ -n "$EXISTING_PR" ]]; then
+  EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state all --json number,state --jq 'if length > 0 then .[0] | "#\(.number) (\(.state))" else "" end' 2>/dev/null || echo "")
+  if [[ -n "$EXISTING_PR" && "$EXISTING_PR" != "" ]]; then
     echo "PR $EXISTING_PR already exists for $BRANCH_NAME, skipping..."
     continue
   fi
