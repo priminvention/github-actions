@@ -13,6 +13,10 @@ if [[ "$UPDATES_JSON" == "[]" ]]; then
   exit 0
 fi
 
+# Configure git identity for GitHub Actions
+git config user.name "github-actions[bot]"
+git config user.email "github-actions[bot]@users.noreply.github.com"
+
 # Parse labels into array
 IFS=',' read -ra LABELS <<< "$PR_LABELS"
 LABEL_ARGS=""
