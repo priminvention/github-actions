@@ -17,13 +17,6 @@ fi
 git config user.name "github-actions[bot]"
 git config user.email "github-actions[bot]@users.noreply.github.com"
 
-# Parse labels into array
-IFS=',' read -ra LABELS <<< "$PR_LABELS"
-LABEL_ARGS=""
-for label in "${LABELS[@]}"; do
-  LABEL_ARGS+=" --label \"$label\""
-done
-
 # Get current branch
 BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
@@ -39,16 +32,16 @@ echo "$UPDATES_JSON" | jq -c '.[]' | while read -r update; do
   # Create branch name
   BRANCH_NAME="deps/helm-${CHART_NAME}-${LATEST_VERSION}"
 
-  # Check if branch already exists
-  if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
-    echo "Branch $BRANCH_NAME already exists, skipping..."
+  # Check if branch already exists on remote
+  if git ls-remote --heads origin "$BRANCH_NAME" 2>/dev/null | grep -q "$BRANCH_NAME"; then
+    echo "Branch $BRANCH_NAME already exists on remote, skipping..."
     continue
   fi
 
-  # Check if PR already exists
-  EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state open --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+  # Check if PR already exists (open or closed) to avoid duplicate PRs
+  EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state all --json number,state --jq '.[0] | "\(.number) (\(.state))"' 2>/dev/null || echo "")
   if [[ -n "$EXISTING_PR" ]]; then
-    echo "PR #$EXISTING_PR already exists for $BRANCH_NAME, skipping..."
+    echo "PR $EXISTING_PR already exists for $BRANCH_NAME, skipping..."
     continue
   fi
 
@@ -77,10 +70,11 @@ Update $CHART_NAME Helm chart from $CURRENT_VERSION to $LATEST_VERSION ($UPDATE_
   # Push branch
   git push -u origin "$BRANCH_NAME"
 
-  # Create PR
-  PR_TITLE="chore(deps): update $CHART_NAME to $LATEST_VERSION"
-  PR_BODY="## Summary
-Updates **$CHART_NAME** Helm chart from \`$CURRENT_VERSION\` to \`$LATEST_VERSION\` ($UPDATE_TYPE update).
+  # Create PR using heredoc to avoid escaping issues
+  gh pr create \
+    --title "chore(deps): update $CHART_NAME to $LATEST_VERSION" \
+    --body "## Summary
+Updates **$CHART_NAME** Helm chart from $CURRENT_VERSION to $LATEST_VERSION ($UPDATE_TYPE update).
 
 ## Checklist
 - [ ] Review changelog for breaking changes
@@ -88,14 +82,11 @@ Updates **$CHART_NAME** Helm chart from \`$CURRENT_VERSION\` to \`$LATEST_VERSIO
 - [ ] Update any custom values if needed
 
 ---
-*This PR was automatically created by [helm-version-check](https://github.com/priminvention/github-actions/tree/main/helm-version-check)*"
-
-  eval "gh pr create \
-    --title \"$PR_TITLE\" \
-    --body \"$PR_BODY\" \
-    --base \"$BASE_BRANCH\" \
-    --head \"$BRANCH_NAME\" \
-    $LABEL_ARGS"
+*This PR was automatically created by [helm-version-check](https://github.com/priminvention/github-actions)*" \
+    --base "$BASE_BRANCH" \
+    --head "$BRANCH_NAME" || {
+      echo "Warning: Failed to create PR, but branch was pushed successfully"
+    }
 
   echo "Created PR for $CHART_NAME update"
 
